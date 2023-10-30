@@ -5,5 +5,6 @@ $ENV{ZEPHYR_BASE})
 project(zephyr_smart_home)
 
 target_sources(app PRIVATE 
+    src/lcd_screen_i2c.c
     src/main.c
 )
