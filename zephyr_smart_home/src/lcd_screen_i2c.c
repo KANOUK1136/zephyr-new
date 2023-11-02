@@ -76,3 +76,18 @@ static void lcd_toggle_enable(const struct i2c_dt_spec *dev_lcd_screen, uint8_t 
     }
     k_sleep(K_MSEC(5));
 }
+
+void lcd_alarm_on(volatile int flag,const struct i2c_dt_spec *dev_lcd_screen, const char *msg, uint8_t line){
+
+    if (flag == 1){
+        write_lcd(dev_lcd_screen , msg, line);
+    }
+}
+
+void lcd_alarm_off(volatile int flag,const struct i2c_dt_spec *dev_lcd_screen, const char *msg, uint8_t line){
+
+    if (flag == 0){
+        write_lcd(dev_lcd_screen , msg, line);
+        write_lcd(dev_lcd_screen , HELLO_MSG, LCD_LINE_1);
+    }
+}
