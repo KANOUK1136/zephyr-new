@@ -25,6 +25,7 @@
 #define BUZZ_0 DT_ALIAS(buzz_0)
 #define MOTION_SENSOR DT_ALIAS(motion_sensor)
 
+K_MUTEX_DEFINE(lcd_mutex);
 
 const struct device *const dht11 = DEVICE_DT_GET_ONE(aosong_dht);
 const struct gpio_dt_spec led_yellow_gpio = GPIO_DT_SPEC_GET_OR(LED_YELLOW_NODE, gpios, {0});
@@ -42,9 +43,11 @@ static struct gpio_callback b1_callback;
 volatile int flag = 0;
 volatile int flag_d = 0;
 volatile int state_alarm = 0;
+volatile int state_intru = 0;
 
-
-K_SEM_DEFINE(init_gpio_sem,0,3);
+K_SEM_DEFINE(init_gpio_sem,0,1);
+K_SEM_DEFINE(init_gpio_sem,0,1);
+K_SEM_DEFINE(alarm_sem,0,1);
 
 void button0_pressed(const struct device *dev, struct gpio_callback *cb,uint32_t pins)
 {
@@ -61,9 +64,11 @@ void button1_pressed(const struct device *dev, struct gpio_callback *cb,uint32_t
 }
 
 void sensor_channel_thread() {
+
 	k_sem_take(&init_gpio_sem, K_FOREVER);
+	printk("d");
 	init_adc_driver();
- 
+	printk("e");
 	while(1) {
 
 		struct sensor_value temp, press, humidity;
@@ -84,6 +89,7 @@ void sensor_channel_thread() {
 		k_sleep(K_MSEC(1000));
 	}
 }
+
 /*
 void button_thread() {
 
@@ -97,22 +103,42 @@ void button_thread() {
 void alarm_thread(){
 
 	k_sem_take(&init_gpio_sem, K_FOREVER);
-
+	printk("c");
 	while(1) {
+
 		int sens_val = gpio_pin_get_dt(&MotionSensor);
 
 		if(sens_val == 0 && state_alarm == 1 && flag == 0  && flag_d == 0) {
+			state_intru = 1;
+			k_mutex_lock(&lcd_mutex, K_FOREVER);
 			write_lcd(&dev_lcd_screen, INTRUDER_MSG_1, LCD_LINE_1);
 			write_lcd(&dev_lcd_screen, INTRUDER_MSG_2, LCD_LINE_2);
+			k_mutex_unlock(&lcd_mutex);
 		}
 		else if(sens_val == 1 && state_alarm == 1 && flag == 0  && flag_d == 0) {
+			state_intru = 0;
+			k_mutex_lock(&lcd_mutex, K_FOREVER);
 			write_lcd(&dev_lcd_screen, HELLO_MSG, LCD_LINE_1);
 			write_lcd(&dev_lcd_screen, START_ALERT_MONITORING_MSG_1, LCD_LINE_2);
-		}		
-		k_sleep(K_MSEC(20));
+			k_mutex_unlock(&lcd_mutex);
+		}
+		
+		
 	}
 }
 
+void alarm_sound(){
+
+	k_sem_take(&alarm_sem, K_FOREVER);
+	printk("a");
+
+	while(1)
+	{
+			gpio_pin_toggle_dt(&buzz0);
+			k_sleep(K_MSEC(1));
+	}
+		
+}
 
 int main(void) {
 
@@ -131,8 +157,7 @@ int main(void) {
 
 	// Motion sensor conf
 	gpio_pin_configure_dt(&MotionSensor, GPIO_INPUT);
-
-	//gpio_pin_configure_dt(&buzz0, GPIO_OUTPUT_LOW);
+	gpio_pin_configure_dt(&buzz0, GPIO_OUTPUT_LOW);
 
 	int val0 = gpio_pin_get_dt(&b0);
 	int val1 = gpio_pin_get_dt(&b1);
@@ -140,33 +165,48 @@ int main(void) {
 	gpio_pin_interrupt_configure_dt(&b0, GPIO_INT_EDGE_TO_ACTIVE);
 	gpio_pin_interrupt_configure_dt(&b1, GPIO_INT_EDGE_TO_ACTIVE);
 
+
 	gpio_init_callback(&b0_callback, button0_pressed, BIT(b0.pin));
 	gpio_add_callback(b0.port, &b0_callback);
 		
 	gpio_init_callback(&b1_callback, button1_pressed, BIT(b1.pin));
 	gpio_add_callback(b1.port, &b1_callback);
 
+	printk("\nBefore sem init gpio");
 	k_sem_give(&init_gpio_sem);
 	k_sem_give(&init_gpio_sem);
 	k_sem_give(&init_gpio_sem);
-			
+	//k_sem_give(&init_gpio_sem);
+	printk("\nBefore sem alarm");
+	k_sem_give(&alarm_sem);
+	printk("b");
 	while (1) {
 		if (flag == 1){
+			k_mutex_lock(&lcd_mutex, K_FOREVER);
         	write_lcd(&dev_lcd_screen , START_ALERT_MONITORING_MSG_1, LCD_LINE_2);
         	write_lcd(&dev_lcd_screen , HELLO_MSG, LCD_LINE_1);
+
 			printk("flag %d\n",flag);
+			
 			flag = 0;
 			state_alarm = 1;
 
+			k_mutex_unlock(&lcd_mutex);
 		}
+
 		if (flag_d == 1){
+
+			k_mutex_lock(&lcd_mutex, K_FOREVER);
         	write_lcd(&dev_lcd_screen , STOP_ALERT_MONITORING_MSG_2, LCD_LINE_2);
         	write_lcd(&dev_lcd_screen , HELLO_MSG, LCD_LINE_1);
         	printk("flag_d %d\n",flag_d);
+
 			flag_d = 0;
 			state_alarm = 0;
+
+			k_mutex_unlock(&lcd_mutex);
+
     	}
-		
 		k_sleep(K_MSEC(20));
 		
 	}
@@ -176,5 +216,6 @@ int main(void) {
 
 K_THREAD_DEFINE(sensor_channel_thread_id, 521, sensor_channel_thread, NULL, NULL, NULL, 9, 0, 0);
 //K_THREAD_DEFINE(steam_thread_id, 521, steam_thread, NULL, NULL, NULL, 9, 0, 0);
-//K_THREAD_DEFINE(button_thread_id, 521, button_thread, NULL, NULL, NULL, 9, 0, 0);
+
 K_THREAD_DEFINE(alarm_thread_id, 521, alarm_thread, NULL, NULL, NULL, 9, 0, 0);
+K_THREAD_DEFINE(alarm_sound_id, 521, alarm_sound, NULL, NULL, NULL, 9, 0, 0);
