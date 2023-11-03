@@ -5,6 +5,7 @@
 
 #include <zephyr/drivers/i2c.h>
 
+K_MUTEX_DEFINE(lcd_mutex);
 
 static void lcd_toggle_enable(const struct i2c_dt_spec *dev_lcd_screen, uint8_t bits);
 static void lcd_byte(const struct i2c_dt_spec *dev_lcd_screen, uint8_t bits, uint8_t mode);
@@ -43,6 +44,8 @@ static void lcd_byte(const struct i2c_dt_spec *dev_lcd_screen, uint8_t bits, uin
 
 void write_lcd(const struct i2c_dt_spec *dev_lcd_screen, const char *msg, uint8_t line)
 {
+    k_mutex_lock(&lcd_mutex, K_FOREVER);
+
     lcd_byte(dev_lcd_screen, line, LCD_CMD);
 
     // Todo: fill the array with space at the end to complete the line
@@ -55,6 +58,7 @@ void write_lcd(const struct i2c_dt_spec *dev_lcd_screen, const char *msg, uint8_
     {
         lcd_byte(dev_lcd_screen, msg[i], LCD_CHR);
     }
+    k_mutex_unlock(&lcd_mutex);
 }
 
 static void lcd_toggle_enable(const struct i2c_dt_spec *dev_lcd_screen, uint8_t bits)
@@ -81,13 +85,15 @@ void lcd_alarm_on(volatile int flag,const struct i2c_dt_spec *dev_lcd_screen, co
 
     if (flag == 1){
         write_lcd(dev_lcd_screen , msg, line);
+        write_lcd(dev_lcd_screen , HELLO_MSG, LCD_LINE_1);
     }
 }
 
 void lcd_alarm_off(volatile int flag,const struct i2c_dt_spec *dev_lcd_screen, const char *msg, uint8_t line){
 
-    if (flag == 0){
+    if (flag == 1){
         write_lcd(dev_lcd_screen , msg, line);
         write_lcd(dev_lcd_screen , HELLO_MSG, LCD_LINE_1);
+        flag = 0;
     }
 }

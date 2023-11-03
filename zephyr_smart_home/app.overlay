@@ -41,12 +41,21 @@
         };
     };
 
+    pir {
+        compatible = "gpio-keys";
+        motionsensor: motion_sensor {
+        gpios = <&gpio0 14 GPIO_ACTIVE_LOW>;
+        label = "motion-sensor";
+        };
+    };
+
     aliases {
         led-yellow = &ledyellow;
         lcd-screen = &lcd;
         button-0 = &button0;
         button-1 = &button1;
         buzz-0 = &buzz0;
+        motion-sensor = &motionsensor;
     };
 
 };

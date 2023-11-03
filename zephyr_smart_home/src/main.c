@@ -23,6 +23,8 @@
 #define BUTTON_0 DT_ALIAS(button_0)
 #define BUTTON_1 DT_ALIAS(button_1)
 #define BUZZ_0 DT_ALIAS(buzz_0)
+#define MOTION_SENSOR DT_ALIAS(motion_sensor)
+
 
 const struct device *const dht11 = DEVICE_DT_GET_ONE(aosong_dht);
 const struct gpio_dt_spec led_yellow_gpio = GPIO_DT_SPEC_GET_OR(LED_YELLOW_NODE, gpios, {0});
@@ -33,22 +35,29 @@ const struct gpio_dt_spec b1 = GPIO_DT_SPEC_GET_OR(BUTTON_1, gpios, {0});
 
 const struct gpio_dt_spec buzz0 = GPIO_DT_SPEC_GET_OR(BUZZ_0, gpios, {0});
 
+const struct gpio_dt_spec MotionSensor = GPIO_DT_SPEC_GET_OR(MOTION_SENSOR, gpios, {0});
+
 static struct gpio_callback b0_callback;
 static struct gpio_callback b1_callback;
 volatile int flag = 0;
+volatile int flag_d = 0;
+volatile int state_alarm = 0;
 
-K_SEM_DEFINE(init_gpio_sem,0,2);
+
+K_SEM_DEFINE(init_gpio_sem,0,3);
 
 void button0_pressed(const struct device *dev, struct gpio_callback *cb,uint32_t pins)
 {
 	printk("Button pressed at %" PRIu32 "\n", k_cycle_get_32());
 	flag = 1;
+	printk("flag int %d\n",flag);
 }
 
 void button1_pressed(const struct device *dev, struct gpio_callback *cb,uint32_t pins)
 {
 	printk("Button pressed at %" PRIu32 "\n", k_cycle_get_32());
-	flag = 0;
+	flag_d = 1;
+	printk("flag_d int %d\n",flag);
 }
 
 void sensor_channel_thread() {
@@ -75,14 +84,32 @@ void sensor_channel_thread() {
 		k_sleep(K_MSEC(1000));
 	}
 }
-
+/*
 void button_thread() {
 
 	k_sem_take(&init_gpio_sem, K_FOREVER);
+}
+*/
 
-	while (1) {
-		lcd_alarm_on(flag, &dev_lcd_screen, START_ALERT_MONITORING_MSG_1, LCD_LINE_2 );
-		lcd_alarm_off(flag, &dev_lcd_screen, STOP_ALERT_MONITORING_MSG_2, LCD_LINE_2 );
+//lcd_alarm_off(flag, &dev_lcd_screen, STOP_ALERT_MONITORING_MSG_2, LCD_LINE_2 );
+//lcd_alarm_on(flag_d, &dev_lcd_screen, START_ALERT_MONITORING_MSG_1, LCD_LINE_2 );
+
+void alarm_thread(){
+
+	k_sem_take(&init_gpio_sem, K_FOREVER);
+
+	while(1) {
+		int sens_val = gpio_pin_get_dt(&MotionSensor);
+
+		if(sens_val == 0 && state_alarm == 1 && flag == 0  && flag_d == 0) {
+			write_lcd(&dev_lcd_screen, INTRUDER_MSG_1, LCD_LINE_1);
+			write_lcd(&dev_lcd_screen, INTRUDER_MSG_2, LCD_LINE_2);
+		}
+		else if(sens_val == 1 && state_alarm == 1 && flag == 0  && flag_d == 0) {
+			write_lcd(&dev_lcd_screen, HELLO_MSG, LCD_LINE_1);
+			write_lcd(&dev_lcd_screen, START_ALERT_MONITORING_MSG_1, LCD_LINE_2);
+		}		
+		k_sleep(K_MSEC(20));
 	}
 }
 
@@ -102,6 +129,9 @@ int main(void) {
     gpio_pin_configure_dt(&b0, GPIO_INPUT);
     gpio_pin_configure_dt(&b1, GPIO_INPUT);
 
+	// Motion sensor conf
+	gpio_pin_configure_dt(&MotionSensor, GPIO_INPUT);
+
 	//gpio_pin_configure_dt(&buzz0, GPIO_OUTPUT_LOW);
 
 	int val0 = gpio_pin_get_dt(&b0);
@@ -118,11 +148,27 @@ int main(void) {
 
 	k_sem_give(&init_gpio_sem);
 	k_sem_give(&init_gpio_sem);
+	k_sem_give(&init_gpio_sem);
+			
+	while (1) {
+		if (flag == 1){
+        	write_lcd(&dev_lcd_screen , START_ALERT_MONITORING_MSG_1, LCD_LINE_2);
+        	write_lcd(&dev_lcd_screen , HELLO_MSG, LCD_LINE_1);
+			printk("flag %d\n",flag);
+			flag = 0;
+			state_alarm = 1;
 
-	while(1){
-		gpio_pin_configure_dt(&buzz0, GPIO_OUTPUT_HIGH);
-		k_sleep(K_MSEC(1));
-		gpio_pin_configure_dt(&buzz0, GPIO_OUTPUT_LOW);
+		}
+		if (flag_d == 1){
+        	write_lcd(&dev_lcd_screen , STOP_ALERT_MONITORING_MSG_2, LCD_LINE_2);
+        	write_lcd(&dev_lcd_screen , HELLO_MSG, LCD_LINE_1);
+        	printk("flag_d %d\n",flag_d);
+			flag_d = 0;
+			state_alarm = 0;
+    	}
+		
+		k_sleep(K_MSEC(20));
+		
 	}
 
 	return 0;
@@ -130,5 +176,5 @@ int main(void) {
 
 K_THREAD_DEFINE(sensor_channel_thread_id, 521, sensor_channel_thread, NULL, NULL, NULL, 9, 0, 0);
 //K_THREAD_DEFINE(steam_thread_id, 521, steam_thread, NULL, NULL, NULL, 9, 0, 0);
-K_THREAD_DEFINE(button_thread_id, 521, button_thread, NULL, NULL, NULL, 9, 0, 0);
-//K_THREAD_DEFINE(buzzer_thread_id, 521, buzzer_thread, NULL, NULL, NULL, 9, 0, 0);
+//K_THREAD_DEFINE(button_thread_id, 521, button_thread, NULL, NULL, NULL, 9, 0, 0);
+K_THREAD_DEFINE(alarm_thread_id, 521, alarm_thread, NULL, NULL, NULL, 9, 0, 0);
